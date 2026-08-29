@@ -1,669 +1,517 @@
-// ============================================================
-// E-RAPORT DIGITAL MDTA/MDTU
-// SERVER V15.5 FINAL
-// MIDTRANS AUTO-SYNC STATUS
-// ============================================================
-
-const express = require("express");
-const path = require("path");
-const fs = require("fs");
+const express = require('express');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
+app.use(express.json({ limit: '256kb' }));
+app.use(express.static(path.join(__dirname, 'public')));
 
-// ============================================================
-// ENVIRONMENT
-// ============================================================
-
-const PORT = process.env.PORT || 8080;
-
-const SERVER_KEY = process.env.MIDTRANS_SERVER_KEY || "";
-const CLIENT_KEY = process.env.MIDTRANS_CLIENT_KEY || "";
-
+const PORT = process.env.PORT || 3000;
+const SERVER_KEY = process.env.MIDTRANS_SERVER_KEY || '';
+const CLIENT_KEY = process.env.MIDTRANS_CLIENT_KEY || '';
 const IS_PROD =
-  String(process.env.MIDTRANS_IS_PRODUCTION || "false")
-    .toLowerCase() === "true";
+  String(process.env.MIDTRANS_IS_PRODUCTION || 'false').toLowerCase() === 'true';
 
-const BASE_URL =
-  process.env.BASE_URL ||
-  `http://localhost:${PORT}`;
+const DRIVE_URL = process.env.DRIVE_DOWNLOAD_URL || '';
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const PRICE = 75000;
 
-const DRIVE_DOWNLOAD_URL =
-  process.env.DRIVE_DOWNLOAD_URL || "";
-
-// ============================================================
+// ======================================================
 // MIDTRANS URL
-// ============================================================
-
-const SNAP_BASE = IS_PROD
-  ? "https://app.midtrans.com"
-  : "https://app.sandbox.midtrans.com";
+// ======================================================
 
 const SNAP_API = IS_PROD
-  ? "https://app.midtrans.com/snap/v1/transactions"
-  : "https://app.sandbox.midtrans.com/snap/v1/transactions";
+  ? 'https://app.midtrans.com/snap/v1/transactions'
+  : 'https://app.sandbox.midtrans.com/snap/v1/transactions';
 
 const SNAP_JS = IS_PROD
-  ? "https://app.midtrans.com/snap/snap.js"
-  : "https://app.sandbox.midtrans.com/snap/snap.js";
+  ? 'https://app.midtrans.com/snap/snap.js'
+  : 'https://app.sandbox.midtrans.com/snap/snap.js';
 
 const STATUS_API_BASE = IS_PROD
-  ? "https://api.midtrans.com/v2"
-  : "https://api.sandbox.midtrans.com/v2";
+  ? 'https://api.midtrans.com/v2'
+  : 'https://api.sandbox.midtrans.com/v2';
 
-// ============================================================
-// MIDDLEWARE
-// ============================================================
+// ======================================================
+// MIDTRANS STATUS
+// ======================================================
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+function mapMidtransStatus(n) {
+  const tx = String(n?.transaction_status || '').toLowerCase();
+  const fraud = String(n?.fraud_status || '').toLowerCase();
 
-// Folder public
-app.use(express.static(path.join(__dirname, "public")));
-
-// ============================================================
-// DATA ORDER
-// ============================================================
-
-const dataDir = path.join(__dirname, "data");
-const ordersFile = path.join(dataDir, "orders.json");
-
-function ensureDataFile() {
-  try {
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-
-    if (!fs.existsSync(ordersFile)) {
-      fs.writeFileSync(
-        ordersFile,
-        JSON.stringify({}, null, 2),
-        "utf8"
-      );
-    }
-  } catch (err) {
-    console.error("Gagal menyiapkan orders.json:", err.message);
-  }
-}
-
-ensureDataFile();
-
-// ============================================================
-// READ ORDERS
-// ============================================================
-
-function readOrders() {
-  try {
-    ensureDataFile();
-
-    const raw = fs.readFileSync(ordersFile, "utf8");
-
-    if (!raw.trim()) return {};
-
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error("Gagal membaca orders:", err.message);
-    return {};
-  }
-}
-
-// ============================================================
-// WRITE ORDERS
-// ============================================================
-
-function writeOrders(data) {
-  try {
-    ensureDataFile();
-
-    fs.writeFileSync(
-      ordersFile,
-      JSON.stringify(data, null, 2),
-      "utf8"
-    );
-
-    return true;
-  } catch (err) {
-    console.error("Gagal menyimpan orders:", err.message);
-    return false;
-  }
-}
-
-// ============================================================
-// GET ORDER
-// ============================================================
-
-function getOrder(orderId) {
-  const orders = readOrders();
-
-  return orders[orderId] || null;
-}
-
-// ============================================================
-// SAVE ORDER
-// ============================================================
-
-function saveOrder(data) {
-  const orders = readOrders();
-
-  const old = orders[data.orderId] || {};
-
-  orders[data.orderId] = {
-    ...old,
-    ...data,
-
-    createdAt:
-      old.createdAt ||
-      data.createdAt ||
-      new Date().toISOString(),
-
-    updatedAt: new Date().toISOString()
-  };
-
-  writeOrders(orders);
-
-  return orders[data.orderId];
-}
-
-// ============================================================
-// GENERATE ORDER ID
-// ============================================================
-
-function createOrderId() {
-  return (
-    "ERAPORT-" +
-    Date.now() +
-    "-" +
-    Math.random()
-      .toString(36)
-      .substring(2, 8)
-      .toUpperCase()
-  );
-}
-
-// ============================================================
-// ACCESS TOKEN
-// ============================================================
-
-function createAccessToken() {
-  return (
-    Date.now().toString(36) +
-    Math.random()
-      .toString(36)
-      .substring(2) +
-    Math.random()
-      .toString(36)
-      .substring(2)
-  );
-}
-
-// ============================================================
-// NORMALISASI STATUS MIDTRANS
-// ============================================================
-
-function mapMidtransStatus(data) {
-  const tx = String(
-    data?.transaction_status || ""
-  ).toLowerCase();
-
-  const fraud = String(
-    data?.fraud_status || ""
-  ).toLowerCase();
-
-  if (tx === "settlement") {
-    return "settlement";
-  }
+  if (tx === 'settlement') return 'settlement';
 
   if (
-    tx === "capture" &&
-    (!fraud || fraud === "accept")
+    tx === 'capture' &&
+    (!fraud || fraud === 'accept')
   ) {
-    return "capture";
+    return 'capture';
   }
 
   if (
-    tx === "capture" &&
+    tx === 'capture' &&
     fraud &&
-    fraud !== "accept"
+    fraud !== 'accept'
   ) {
-    return "challenge";
+    return 'challenge';
   }
 
-  return tx || "pending";
+  return tx || 'pending';
 }
-
-// ============================================================
-// CEK STATUS LANGSUNG KE MIDTRANS
-// ============================================================
 
 async function fetchMidtransStatus(orderId) {
   if (!SERVER_KEY) {
-    throw new Error(
-      "MIDTRANS_SERVER_KEY belum tersedia."
-    );
+    throw new Error('MIDTRANS_SERVER_KEY belum dikonfigurasi.');
   }
 
-  const auth = Buffer
-    .from(SERVER_KEY + ":")
-    .toString("base64");
+  const auth = Buffer.from(SERVER_KEY + ':').toString('base64');
 
-  const url =
-    `${STATUS_API_BASE}/${encodeURIComponent(orderId)}/status`;
-
-  const response = await fetch(url, {
-    method: "GET",
-
-    headers: {
-      Accept: "application/json",
-
-      Authorization:
-        "Basic " + auth
+  const r = await fetch(
+    `${STATUS_API_BASE}/${encodeURIComponent(orderId)}/status`,
+    {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        Authorization: 'Basic ' + auth
+      }
     }
-  });
+  );
 
-  let data = {};
+  let d = {};
 
   try {
-    data = await response.json();
-  } catch (_) {}
+    d = await r.json();
+  } catch {}
 
-  if (!response.ok) {
-    const message =
-      data.status_message ||
-      (Array.isArray(data.error_messages)
-        ? data.error_messages.join(", ")
-        : "") ||
-      `HTTP ${response.status}`;
+  if (!r.ok) {
+    const err = new Error(
+      d.status_message ||
+      (Array.isArray(d.error_messages)
+        ? d.error_messages.join(', ')
+        : '') ||
+      `HTTP ${r.status}`
+    );
 
-    const err = new Error(message);
-
-    err.httpStatus = response.status;
+    err.httpStatus = r.status;
 
     throw err;
   }
 
-  return data;
+  return d;
 }
 
-// ============================================================
-// SIMPAN STATUS MIDTRANS KE orders.json
-// ============================================================
+// ======================================================
+// ORDER STORAGE
+// ======================================================
 
-function persistMidtransStatus(orderId, data) {
+const DATA_FILE = path.join(__dirname, 'data', 'orders.json');
+
+function ensureDataFile() {
+  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+
+  if (!fs.existsSync(DATA_FILE)) {
+    fs.writeFileSync(DATA_FILE, '{}');
+  }
+}
+
+function readOrders() {
+  ensureDataFile();
+
+  try {
+    return JSON.parse(
+      fs.readFileSync(DATA_FILE, 'utf8') || '{}'
+    );
+  } catch {
+    return {};
+  }
+}
+
+function writeOrders(orders) {
+  ensureDataFile();
+
+  fs.writeFileSync(
+    DATA_FILE,
+    JSON.stringify(orders, null, 2)
+  );
+}
+
+function saveOrder(order) {
+  const orders = readOrders();
+
+  orders[order.orderId] = {
+    ...(orders[order.orderId] || {}),
+    ...order,
+    updatedAt: new Date().toISOString()
+  };
+
+  writeOrders(orders);
+}
+
+function getOrder(orderId) {
+  return readOrders()[orderId] || null;
+}
+
+function persistMidtransStatus(orderId, d) {
   const existing = getOrder(orderId);
 
-  if (!existing) {
-    return null;
-  }
-
-  const status =
-    mapMidtransStatus(data);
+  if (!existing) return null;
 
   saveOrder({
     orderId,
 
-    status,
+    status:
+      mapMidtransStatus(d),
 
     paymentType:
-      data.payment_type ||
+      d.payment_type ||
       existing.paymentType ||
-      "",
+      '',
 
     transactionId:
-      data.transaction_id ||
+      d.transaction_id ||
       existing.transactionId ||
-      "",
+      '',
 
     settlementTime:
-      data.settlement_time ||
+      d.settlement_time ||
       existing.settlementTime ||
-      "",
+      '',
 
     transactionTime:
-      data.transaction_time ||
+      d.transaction_time ||
       existing.transactionTime ||
-      "",
+      '',
 
     statusMessage:
-      data.status_message ||
+      d.status_message ||
       existing.statusMessage ||
-      "",
+      '',
 
-    rawLastStatus: data
+    rawLastStatus: d
   });
 
   return getOrder(orderId);
 }
 
-// ============================================================
-// CONFIG API
-// ============================================================
+// ======================================================
+// CONFIG
+// checkout.html membutuhkan snapJsUrl
+// ======================================================
 
-app.get("/api/config", (req, res) => {
+app.get('/api/config', (req, res) => {
   res.json({
     clientKey: CLIENT_KEY,
-
-    isProduction: IS_PROD,
-
-    snapJs: SNAP_JS,
-
-    baseUrl: BASE_URL,
-
-    product: {
-      name: "E-Raport Digital MDTA/MDTU",
-
-      price: 75000
-    }
+    snapJsUrl: SNAP_JS,
+    isProduction: IS_PROD
   });
 });
 
-// ============================================================
-// CREATE SNAP TRANSACTION
-// ============================================================
+// ======================================================
+// CREATE TRANSACTION
+// ======================================================
 
-app.post("/api/create-transaction", async (req, res) => {
+app.post('/api/create-transaction', async (req, res) => {
   try {
-    if (!SERVER_KEY) {
+    if (!SERVER_KEY || !CLIENT_KEY) {
       return res.status(500).json({
         error:
-          "MIDTRANS_SERVER_KEY belum diatur."
+          'Midtrans key belum dikonfigurasi pada server.'
       });
     }
 
     const {
-      name,
+      nama,
+      wa,
       email,
-      phone,
-      institution,
-      notes
+      madrasah = '',
+      catatan = '',
+      paymentMode = 'all'
     } = req.body || {};
 
-    if (!name || !email || !phone) {
+    if (!nama || !wa || !email) {
       return res.status(400).json({
         error:
-          "Nama, email dan WhatsApp wajib diisi."
+          'Nama, WhatsApp, dan email wajib diisi.'
       });
     }
 
     const orderId =
-      createOrderId();
+      `ERAPORT-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
 
     const accessToken =
-      createAccessToken();
-
-    const grossAmount = 75000;
+      crypto.randomBytes(24).toString('hex');
 
     const payload = {
       transaction_details: {
         order_id: orderId,
-
-        gross_amount: grossAmount
+        gross_amount: PRICE
       },
 
       item_details: [
         {
-          id: "ERAPORT-MDTA-MDTU",
-
-          price: grossAmount,
-
+          id: 'ERAPORT-MDTA-MDTU',
+          price: PRICE,
           quantity: 1,
-
-          name:
-            "E-Raport Digital MDTA/MDTU"
+          name: 'E-Raport Digital MDTA/MDTU'
         }
       ],
 
       customer_details: {
-        first_name: name,
+        first_name:
+          String(nama).slice(0, 50),
 
-        email,
+        email:
+          String(email).slice(0, 100),
 
-        phone
+        phone:
+          String(wa).slice(0, 30)
       },
 
-      callbacks: {
-        finish:
-          `${BASE_URL}/success.html?order_id=${encodeURIComponent(orderId)}&access=${encodeURIComponent(accessToken)}`
-      }
+      custom_field1:
+        String(madrasah).slice(0, 255),
+
+      custom_field2:
+        String(catatan).slice(0, 255)
     };
 
-    const auth = Buffer
-      .from(SERVER_KEY + ":")
-      .toString("base64");
+    // ==================================================
+    // MODE QRIS / GOPAY
+    // ==================================================
 
-    const response =
+    if (
+      String(paymentMode).toLowerCase() === 'qris'
+    ) {
+      payload.enabled_payments = ['gopay'];
+    }
+
+    const auth =
+      Buffer.from(SERVER_KEY + ':').toString('base64');
+
+    const r =
       await fetch(SNAP_API, {
-        method: "POST",
+        method: 'POST',
 
         headers: {
-          "Content-Type":
-            "application/json",
-
-          Accept:
-            "application/json",
-
-          Authorization:
-            "Basic " + auth
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          Authorization: 'Basic ' + auth
         },
 
         body:
           JSON.stringify(payload)
       });
 
-    const result =
-      await response.json();
+    const d =
+      await r.json();
 
-    if (!response.ok) {
+    if (!r.ok) {
       console.error(
-        "MIDTRANS CREATE ERROR:",
-        result
+        'Midtrans create error',
+        d
       );
 
-      return res
-        .status(response.status)
-        .json({
-          error:
-            result.error_messages ||
-            result.status_message ||
-            "Gagal membuat transaksi Midtrans."
-        });
+      return res.status(r.status).json({
+        error:
+          d.error_messages?.join(', ') ||
+          d.status_message ||
+          'Gagal membuat transaksi Midtrans.'
+      });
     }
 
     saveOrder({
       orderId,
-
       accessToken,
 
-      status: "pending",
+      status: 'pending',
 
-      grossAmount,
-
-      name,
-
+      nama,
+      wa,
       email,
+      madrasah,
+      catatan,
 
-      phone,
+      grossAmount: PRICE,
 
-      institution:
-        institution || "",
-
-      notes:
-        notes || "",
+      paymentMode:
+        String(paymentMode).toLowerCase(),
 
       snapToken:
-        result.token || "",
+        d.token,
 
-      redirectUrl:
-        result.redirect_url || ""
+      createdAt:
+        new Date().toISOString()
     });
 
     res.json({
-      token:
-        result.token,
-
-      redirect_url:
-        result.redirect_url,
-
-      order_id:
-        orderId,
-
-      access:
-        accessToken
+      orderId,
+      accessToken,
+      snapToken: d.token
     });
 
   } catch (err) {
-    console.error(
-      "CREATE TRANSACTION ERROR:",
-      err
-    );
+    console.error(err);
 
     res.status(500).json({
       error:
-        "Terjadi kesalahan pada server.",
-
-      detail:
-        err.message
+        'Terjadi kesalahan server.'
     });
   }
 });
 
-// ============================================================
-// WEBHOOK MIDTRANS
-// ============================================================
+// ======================================================
+// MIDTRANS WEBHOOK
+// ======================================================
 
 app.post(
-  "/api/midtrans-notification",
+  '/api/midtrans-notification',
   async (req, res) => {
 
     try {
-      const notification =
+      const n =
         req.body || {};
 
-      const orderId =
-        notification.order_id;
+      const {
+        order_id,
+        status_code,
+        gross_amount,
+        signature_key
+      } = n;
 
-      if (!orderId) {
-        return res.status(400).json({
+      const expected =
+        crypto
+          .createHash('sha512')
+          .update(
+            String(order_id) +
+            String(status_code) +
+            String(gross_amount) +
+            SERVER_KEY
+          )
+          .digest('hex');
+
+      if (
+        !signature_key ||
+        signature_key !== expected
+      ) {
+        return res.status(403).json({
           error:
-            "order_id tidak ditemukan."
+            'Signature notification tidak valid.'
         });
       }
 
-      console.log(
-        "MIDTRANS NOTIFICATION:",
-        orderId,
-        notification.transaction_status
-      );
-
-      // Jangan hanya percaya data browser.
-      // Sinkronkan kembali langsung ke Midtrans.
-
-      let data =
-        notification;
-
-      try {
-        data =
-          await fetchMidtransStatus(
-            orderId
-          );
-      } catch (syncErr) {
-        console.warn(
-          "Webhook status sync gagal:",
-          syncErr.message
-        );
-      }
-
       const existing =
-        getOrder(orderId);
+        getOrder(order_id);
 
-      if (existing) {
-        persistMidtransStatus(
-          orderId,
-          data
-        );
+      if (!existing) {
+        return res.status(404).json({
+          error:
+            'Order tidak ditemukan.'
+        });
       }
 
-      return res.status(200).json({
+      const status =
+        mapMidtransStatus(n);
+
+      saveOrder({
+        orderId:
+          order_id,
+
+        status,
+
+        paymentType:
+          n.payment_type ||
+          existing.paymentType ||
+          '',
+
+        transactionId:
+          n.transaction_id ||
+          existing.transactionId ||
+          '',
+
+        settlementTime:
+          n.settlement_time ||
+          existing.settlementTime ||
+          '',
+
+        rawLastNotification:
+          n
+      });
+
+      res.json({
         received: true
       });
 
     } catch (err) {
-      console.error(
-        "WEBHOOK ERROR:",
-        err
-      );
+      console.error(err);
 
-      return res.status(500).json({
+      res.status(500).json({
         error:
-          err.message
+          'Notification handler error.'
       });
     }
   }
 );
 
-// ============================================================
-// GET ORDER
-// AUTO SYNC DENGAN MIDTRANS
-// ============================================================
+// ======================================================
+// GET ORDER + AUTO SYNC MIDTRANS
+// ======================================================
 
 app.get(
-  "/api/order/:orderId",
+  '/api/order/:orderId',
   async (req, res) => {
 
     const orderId =
       req.params.orderId;
 
-    let order =
+    let o =
       getOrder(orderId);
 
-    if (!order) {
-      return res
-        .status(404)
-        .json({
-          error:
-            "Order tidak ditemukan."
-        });
+    if (!o) {
+      return res.status(404).json({
+        error:
+          'Order tidak ditemukan.'
+      });
     }
 
     const terminalStatuses = [
-      "settlement",
-      "capture",
-      "paid",
-      "deny",
-      "cancel",
-      "expire",
-      "failure",
-      "refund",
-      "partial_refund"
+      'settlement',
+      'capture',
+      'paid',
+      'deny',
+      'cancel',
+      'expire',
+      'failure',
+      'refund',
+      'partial_refund'
     ];
 
     const currentStatus =
       String(
-        order.status || ""
+        o.status || ''
       ).toLowerCase();
 
-    // Jika status lokal belum final,
-    // cek langsung ke Midtrans.
-
     if (
-      String(req.query.sync || "1") !== "0" &&
+      String(req.query.sync || '1') !== '0' &&
       !terminalStatuses.includes(
         currentStatus
       )
     ) {
       try {
-        const midtrans =
+        const d =
           await fetchMidtransStatus(
             orderId
           );
 
-        order =
+        o =
           persistMidtransStatus(
             orderId,
-            midtrans
-          ) || order;
+            d
+          ) || o;
 
       } catch (err) {
         console.warn(
-          "Midtrans status sync warning:",
+          'Midtrans status sync warning:',
           orderId,
           err.message
         );
@@ -672,99 +520,98 @@ app.get(
 
     res.json({
       orderId:
-        order.orderId,
+        o.orderId,
 
       status:
-        order.status,
+        o.status,
 
       grossAmount:
-        order.grossAmount,
+        o.grossAmount,
 
       paymentType:
-        order.paymentType || "",
+        o.paymentType || '',
 
       transactionId:
-        order.transactionId || "",
+        o.transactionId || '',
 
       settlementTime:
-        order.settlementTime || "",
+        o.settlementTime || '',
 
       transactionTime:
-        order.transactionTime || "",
+        o.transactionTime || '',
 
       statusMessage:
-        order.statusMessage || "",
+        o.statusMessage || '',
 
       updatedAt:
-        order.updatedAt || ""
+        o.updatedAt || ''
     });
   }
 );
 
-// ============================================================
-// FORCE SYNC STATUS
-// ============================================================
+// ======================================================
+// MANUAL / FORCE SYNC
+// ======================================================
 
 app.post(
-  "/api/order/:orderId/sync",
+  '/api/order/:orderId/sync',
   async (req, res) => {
 
     const orderId =
       req.params.orderId;
 
-    const existing =
-      getOrder(orderId);
-
-    if (!existing) {
-      return res
-        .status(404)
-        .json({
-          error:
-            "Order tidak ditemukan."
-        });
+    if (!getOrder(orderId)) {
+      return res.status(404).json({
+        error:
+          'Order tidak ditemukan.'
+      });
     }
 
     try {
-      const midtrans =
+      const d =
         await fetchMidtransStatus(
           orderId
         );
 
-      const order =
+      const o =
         persistMidtransStatus(
           orderId,
-          midtrans
+          d
         );
 
       res.json({
         orderId:
-          order.orderId,
+          o.orderId,
 
         status:
-          order.status,
+          o.status,
 
         grossAmount:
-          order.grossAmount,
+          o.grossAmount,
 
         paymentType:
-          order.paymentType || "",
+          o.paymentType || '',
 
         transactionId:
-          order.transactionId || "",
+          o.transactionId || '',
 
         settlementTime:
-          order.settlementTime || "",
+          o.settlementTime || '',
+
+        transactionTime:
+          o.transactionTime || '',
 
         statusMessage:
-          order.statusMessage || "",
+          o.statusMessage || '',
 
         updatedAt:
-          order.updatedAt || ""
+          o.updatedAt || ''
       });
 
     } catch (err) {
       console.error(
-        "FORCE SYNC ERROR:",
+        'Midtrans manual sync error:',
+        orderId,
         err.message
       );
 
@@ -774,7 +621,7 @@ app.post(
         )
         .json({
           error:
-            "Gagal menyinkronkan status Midtrans.",
+            'Gagal menyinkronkan status Midtrans.',
 
           detail:
             err.message
@@ -783,153 +630,111 @@ app.post(
   }
 );
 
-// ============================================================
-// DOWNLOAD / ACCESS
-// ============================================================
+// ======================================================
+// ACCESS / DOWNLOAD
+// Auto sync lagi sebelum memberi akses
+// ======================================================
 
 app.get(
-  "/api/access/:orderId/:accessToken",
+  '/api/access/:orderId/:accessToken',
   async (req, res) => {
 
-    const {
-      orderId,
-      accessToken
-    } = req.params;
+    let o =
+      getOrder(
+        req.params.orderId
+      );
 
-    let order =
-      getOrder(orderId);
-
-    if (!order) {
-      return res
-        .status(404)
-        .json({
-          error:
-            "Order tidak ditemukan."
-        });
+    if (!o) {
+      return res.status(404).json({
+        error:
+          'Order tidak ditemukan.'
+      });
     }
 
     if (
-      order.accessToken !==
-      accessToken
+      req.params.accessToken !==
+      o.accessToken
     ) {
-      return res
-        .status(403)
-        .json({
-          error:
-            "Token akses tidak valid."
-        });
+      return res.status(403).json({
+        error:
+          'Token akses tidak valid.'
+      });
     }
 
-    // Sinkronisasi sekali lagi
-    // sebelum memberikan download.
+    if (
+      ![
+        'settlement',
+        'capture',
+        'paid'
+      ].includes(
+        String(
+          o.status || ''
+        ).toLowerCase()
+      )
+    ) {
+      try {
+        const d =
+          await fetchMidtransStatus(
+            req.params.orderId
+          );
 
-    try {
-      const midtrans =
-        await fetchMidtransStatus(
-          orderId
+        o =
+          persistMidtransStatus(
+            req.params.orderId,
+            d
+          ) || o;
+
+      } catch (err) {
+        console.warn(
+          'Access status sync warning:',
+          req.params.orderId,
+          err.message
         );
-
-      order =
-        persistMidtransStatus(
-          orderId,
-          midtrans
-        ) || order;
-
-    } catch (err) {
-      console.warn(
-        "Access status sync warning:",
-        err.message
-      );
+      }
     }
 
-    const status =
-      String(
-        order.status || ""
-      ).toLowerCase();
+    if (
+      ![
+        'settlement',
+        'capture',
+        'paid'
+      ].includes(
+        String(
+          o.status || ''
+        ).toLowerCase()
+      )
+    ) {
+      return res.status(402).json({
+        error:
+          'Pembayaran belum terverifikasi.',
 
-    const paid =
-      status === "settlement" ||
-      status === "capture" ||
-      status === "paid";
-
-    if (!paid) {
-      return res
-        .status(403)
-        .json({
-          error:
-            "Pembayaran belum berhasil.",
-
-          status
-        });
+        status:
+          o.status || 'pending'
+      });
     }
 
-    if (!DRIVE_DOWNLOAD_URL) {
-      return res
-        .status(500)
-        .json({
-          error:
-            "DRIVE_DOWNLOAD_URL belum diatur."
-        });
+    if (!DRIVE_URL) {
+      return res.status(503).json({
+        error:
+          'Link akses belum dikonfigurasi.'
+      });
     }
 
     res.json({
-      success: true,
-
-      orderId,
-
-      status,
-
       url:
-        DRIVE_DOWNLOAD_URL
+        DRIVE_URL,
+
+      status:
+        o.status
     });
   }
 );
 
-// ============================================================
-// ROOT
-// ============================================================
-
-app.get("/", (req, res) => {
-  res.sendFile(
-    path.join(
-      __dirname,
-      "public",
-      "index.html"
-    )
-  );
-});
-
-// ============================================================
-// HEALTH CHECK
-// ============================================================
-
-app.get(
-  "/api/health",
-  (req, res) => {
-
-    res.json({
-      status: "ok",
-
-      service:
-        "E-Raport Payment Gateway",
-
-      midtrans:
-        IS_PROD
-          ? "PRODUCTION"
-          : "SANDBOX",
-
-      time:
-        new Date().toISOString()
-    });
-  }
-);
-
-// ============================================================
-// START SERVER
-// ============================================================
+// ======================================================
+// START
+// ======================================================
 
 app.listen(PORT, () => {
-
   console.log(
     `E-Raport Payment Gateway berjalan di ${BASE_URL}`
   );
@@ -937,12 +742,8 @@ app.listen(PORT, () => {
   console.log(
     `Mode Midtrans: ${
       IS_PROD
-        ? "PRODUCTION"
-        : "SANDBOX"
+        ? 'PRODUCTION'
+        : 'SANDBOX'
     }`
-  );
-
-  console.log(
-    `Port: ${PORT}`
   );
 });
