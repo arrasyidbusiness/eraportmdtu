@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#075a31">
+<title>Checkout — E-Raport Digital MDTA/MDTU</title>
+<style>
+:root{--green:#075a31;--green2:#0a7a42;--gold:#f5c84b;--bg:#f4f8f5;--ink:#153126;--muted:#68786f;--line:#e2eae5;--danger:#b42318}
+*{box-sizing:border-box}html,body{max-width:100%;overflow-x:hidden}body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--ink);-webkit-text-size-adjust:100%}a{text-decoration:none;color:inherit}
+.shell{width:min(820px,calc(100% - 24px));margin:16px auto 42px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}.back{font-size:.8rem;color:var(--green);font-weight:900}.top .sub{text-align:right}
+.card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:20px;box-shadow:0 10px 28px rgba(18,65,39,.06);margin-bottom:14px}
+h1{font-size:1.55rem;line-height:1.15;margin:0 0 6px}h2{font-size:1rem;margin:0 0 12px}.sub{font-size:.78rem;line-height:1.5;color:var(--muted)}
+.product{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;background:#f8fbf9;border:1px solid #e2ece6;border-radius:14px;padding:14px}.product b{display:block;color:var(--green);overflow-wrap:anywhere}.old{text-decoration:line-through;color:#96a098;font-size:.72rem}.price{font-weight:1000;color:var(--green);font-size:1.25rem;white-space:nowrap}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}.field{display:grid;gap:5px;min-width:0}label{font-size:.72rem;font-weight:900}input,textarea{width:100%;min-width:0;padding:12px;border:1px solid #dce6df;border-radius:11px;font:inherit;background:#fbfdfb;color:var(--ink);outline:none}input:focus,textarea:focus{border-color:#8dc7a8;box-shadow:0 0 0 3px rgba(10,122,66,.08)}textarea{min-height:78px;resize:vertical}
+.summary{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid #e5ece8;padding-top:12px;margin-top:12px}.total{font-size:1.3rem;font-weight:1000;color:var(--green);white-space:nowrap}
+.pay-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}.btn{width:100%;border:0;border-radius:13px;padding:13px 14px;font-weight:1000;cursor:pointer;min-height:48px;font-size:.9rem}.btn:disabled{opacity:.65;cursor:wait}.btn-primary{background:linear-gradient(135deg,var(--green2),var(--green));color:#fff;box-shadow:0 10px 22px rgba(7,90,49,.15)}.btn-secondary{background:#fff;color:var(--green);border:1px solid #cfe0d6}.qris-hint{display:flex;gap:9px;align-items:flex-start;margin-top:10px;padding:10px 11px;background:#eef8f2;border:1px solid #d8eadf;border-radius:11px;font-size:.69rem;line-height:1.45;color:#315b42}.qris-hint b{color:var(--green)}
+.notice{margin-top:10px;padding:10px;border-radius:10px;background:#fff8dd;border:1px solid #eddc9c;color:#695700;font-size:.67rem;line-height:1.45}.status{display:none;margin-top:10px;padding:10px;border-radius:10px;background:#eef7f1;color:#235b38;font-size:.72rem;line-height:1.45}
+@media(max-width:620px){
+ body{padding-bottom:12px}.shell{width:calc(100% - 14px);margin:7px auto 22px}.top{padding:2px 3px}.top .sub{font-size:.65rem}.card{padding:14px;border-radius:15px;margin-bottom:9px}h1{font-size:1.35rem}.sub{font-size:.73rem}.product{grid-template-columns:minmax(0,1fr) auto;padding:11px;gap:8px}.product b{font-size:.87rem}.price{font-size:1.1rem}.grid{grid-template-columns:1fr;gap:9px}input,textarea{font-size:16px;padding:11px}.summary{align-items:flex-end}.summary b{font-size:.9rem}.total{font-size:1.18rem}.pay-actions{grid-template-columns:1fr;gap:8px}.btn{min-height:50px;font-size:.92rem}.btn-primary{order:1}.btn-secondary{order:2}.notice,.qris-hint,.status{font-size:.68rem}.top{position:sticky;top:0;z-index:5;background:rgba(244,248,245,.96);backdrop-filter:blur(8px);padding-block:6px}
+}
+@media(max-width:370px){.shell{width:calc(100% - 10px)}.card{padding:12px}.product{grid-template-columns:1fr}.product>div:last-child{text-align:left!important}.summary{display:grid;grid-template-columns:1fr auto}.top .sub{display:none}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top"><a class="back" href="index.html">← Kembali</a><div class="sub">🔒 Pembayaran melalui Midtrans</div></div>
+
+  <div class="card">
+    <h1>Checkout</h1>
+    <p class="sub">Lengkapi data pembeli. Setelah menekan tombol Bayar Sekarang, pilihan QRIS, e-wallet, virtual account, dan metode lain yang aktif di akun Midtrans akan ditampilkan.</p>
+    <div class="product">
+      <div><b>E-RAPORT DIGITAL MDTA/MDTU</b><span class="sub">Aplikasi + panduan penggunaan</span></div>
+      <div style="text-align:right"><div class="old">Rp150.000</div><div class="price">Rp75.000</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Data Pembeli</h2>
+    <div class="grid">
+      <div class="field"><label>Nama Lengkap *</label><input id="nama" autocomplete="name" placeholder="Nama lengkap"></div>
+      <div class="field"><label>No. WhatsApp *</label><input id="wa" autocomplete="tel" placeholder="08xxxxxxxxxx"></div>
+      <div class="field"><label>Email *</label><input id="email" type="email" autocomplete="email" placeholder="nama@gmail.com"></div>
+      <div class="field"><label>Nama MDTA/MDTU</label><input id="madrasah" placeholder="Nama lembaga"></div>
+    </div>
+    <div class="field" style="margin-top:10px"><label>Catatan</label><textarea id="catatan" placeholder="Opsional"></textarea></div>
+
+    <div class="summary">
+      <div><b>Total Pembayaran</b><div class="sub">E-Raport Digital MDTA/MDTU</div></div>
+      <div class="total">Rp75.000</div>
+    </div>
+
+    <div class="pay-actions">
+      <button class="btn btn-primary" id="qrisBtn" onclick="startPayment('qris')">▣ Bayar QRIS / GoPay</button>
+      <button class="btn btn-secondary" id="payBtn" onclick="startPayment('all')">💳 Metode Pembayaran Lain</button>
+    </div>
+    <div class="qris-hint"><span>✓</span><div><b>Paling praktis di HP:</b> pilih Bayar QRIS / GoPay untuk langsung membatasi pilihan pembayaran ke QRIS/GoPay. Gunakan tombol kedua untuk VA, bank, atau metode lain yang aktif.</div></div>
+    <div class="notice">Jangan menutup halaman sampai jendela pembayaran Midtrans muncul. Metode pembayaran yang tersedia mengikuti metode yang sudah diaktifkan di akun Midtrans merchant.</div>
+    <div id="status" class="status"></div>
+  </div>
+</div>
+
+<script>
+let SNAP_READY = false;
+let CURRENT_ORDER = null;
+
+async function loadSnap(){
+  const cfg = await fetch('/api/config').then(r=>r.json());
+  const s = document.createElement('script');
+  s.src = cfg.snapJsUrl;
+  s.setAttribute('data-client-key', cfg.clientKey);
+  s.onload = ()=>{ SNAP_READY = true; };
+  s.onerror = ()=>showStatus('Gagal memuat Midtrans Snap. Periksa koneksi internet dan konfigurasi Client Key.');
+  document.head.appendChild(s);
+}
+loadSnap();
+
+function showStatus(msg){
+  const el = document.getElementById('status');
+  el.style.display='block';
+  el.textContent=msg;
+}
+
+async function startPayment(paymentMode="all"){
+  const nama=document.getElementById('nama').value.trim();
+  const wa=document.getElementById('wa').value.trim();
+  const email=document.getElementById('email').value.trim();
+  const madrasah=document.getElementById('madrasah').value.trim();
+  const catatan=document.getElementById('catatan').value.trim();
+  if(!nama || !wa || !email) return alert('Mohon lengkapi Nama, WhatsApp, dan Email.');
+  if(!SNAP_READY) return alert('Midtrans Snap belum siap. Tunggu sebentar lalu coba lagi.');
+
+  const btn=document.getElementById(paymentMode==='qris'?'qrisBtn':'payBtn');
+  const other=document.getElementById(paymentMode==='qris'?'payBtn':'qrisBtn');
+  const original=btn.textContent;
+  btn.disabled=true; other.disabled=true; btn.textContent='Mempersiapkan pembayaran...';
+
+  try{
+    const res=await fetch('/api/create-transaction',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({nama,wa,email,madrasah,catatan,paymentMode})
+    });
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error || 'Gagal membuat transaksi.');
+    CURRENT_ORDER=data;
+
+    window.snap.pay(data.snapToken,{
+      onSuccess:function(){ location.href=`success.html?order_id=${encodeURIComponent(data.orderId)}&access=${encodeURIComponent(data.accessToken)}`; },
+      onPending:function(){ location.href=`success.html?order_id=${encodeURIComponent(data.orderId)}&access=${encodeURIComponent(data.accessToken)}`; },
+      onError:function(result){ console.error(result); showStatus('Pembayaran gagal. Silakan coba kembali.'); btn.disabled=false; other.disabled=false; btn.textContent=original; },
+      onClose:function(){ showStatus('Jendela pembayaran ditutup sebelum transaksi selesai. Anda dapat mencoba lagi.'); btn.disabled=false; other.disabled=false; btn.textContent=original; }
+    });
+  }catch(err){
+    showStatus(err.message);
+    btn.disabled=false; other.disabled=false; btn.textContent=original;
+  }
+}
+</script>
+</body>
+</html>
