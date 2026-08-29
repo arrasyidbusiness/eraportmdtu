@@ -11,10 +11,14 @@ body{margin:0;font-family:Arial,sans-serif;background:#f4f8f5;color:#153126}.wra
 <div id="box" class="box">Status sedang diperiksa…</div><div id="progress" class="progress"><span></span></div>
 <div id="meta" class="meta"></div>
 <div class="actions">
-<a id="download" class="btn primary" href="#" target="_blank" hidden>⬇ Unduh / Akses E-Raport</a>
+<a id="download" class="btn primary" href="#" target="_blank" hidden>⬇ Download E-Raport — Akses Terproteksi</a>
 <button id="retry" class="btn" type="button">↻ Cek Status Sekarang</button>
 <a class="btn" href="index.html">Kembali ke Landing Page</a>
-</div></div></div>
+</div>
+<div style="margin-top:12px;font-size:.72rem;line-height:1.5;color:#68786f">
+Akses download dilindungi token transaksi, batas jumlah download, dan masa berlaku.
+</div>
+</div></div>
 <script>
 const p=new URLSearchParams(location.search),orderId=p.get('order_id')||'',access=p.get('access')||'';
 const ok=new Set(['settlement','capture','paid']),bad=new Set(['deny','cancel','expire','failure']);
@@ -30,7 +34,22 @@ function render(kind,msg,d={}){
 async function unlock(){
   const r=await fetch(`/api/access/${encodeURIComponent(orderId)}/${encodeURIComponent(access)}`,{cache:'no-store'});
   const d=await r.json().catch(()=>({}));
-  if(r.ok&&d.url){$('download').href=d.url;$('download').hidden=false;}
+
+  if(!r.ok){
+    throw new Error(d.error || 'Akses download belum tersedia.');
+  }
+
+  if(d.downloadUrl){
+    $('download').href=d.downloadUrl;
+    $('download').hidden=false;
+
+    const info=[];
+    if(Number.isFinite(Number(d.remaining))) info.push('Sisa download: '+d.remaining);
+    if(d.expiresAt) info.push('Akses sampai: '+new Date(d.expiresAt).toLocaleString('id-ID'));
+
+    const current=$('meta').textContent;
+    $('meta').textContent=[current,...info].filter(Boolean).join(' • ');
+  }
 }
 async function check(manual=false){
   if(busy||!orderId)return; busy=true;
