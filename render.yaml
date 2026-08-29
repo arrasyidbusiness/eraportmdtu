@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: eraport-digital-mdta-mdtu
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: MIDTRANS_SERVER_KEY
+        sync: false
+      - key: MIDTRANS_CLIENT_KEY
+        sync: false
+      - key: MIDTRANS_IS_PRODUCTION
+        value: "false"
+      - key: BASE_URL
+        sync: false
+      - key: DRIVE_DOWNLOAD_URL
+        sync: false

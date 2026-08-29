@@ -1,0 +1,17 @@
+{
+  "name": "eraport-digital-mdta-mdtu-v15",
+  "version": "15.0.0",
+  "private": true,
+  "description": "Landing page + checkout Midtrans Snap untuk E-Raport Digital MDTA/MDTU",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

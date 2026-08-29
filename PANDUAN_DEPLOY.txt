@@ -1,0 +1,22 @@
+PANDUAN CEPAT DEPLOY
+
+Pilihan termudah untuk backend Node:
+- Render
+- Railway
+- VPS / hosting Node.js
+- layanan lain yang mendukung Node.js + HTTPS
+
+LANGKAH:
+1. Upload seluruh folder proyek ke GitHub/private repository atau hosting Node.
+2. Jalankan npm install.
+3. Set environment variables dari .env.example di dashboard hosting.
+4. Deploy.
+5. Buka domain hasil deployment.
+6. Login Midtrans Sandbox.
+7. Isi Payment Notification URL:
+   https://DOMAIN-ANDA/api/midtrans-notification
+8. Coba transaksi Sandbox.
+9. Pastikan success.html berubah menjadi "Pembayaran berhasil" setelah webhook diterima.
+10. Baru setelah semua lolos, pindahkan ke Production.
+
+JANGAN mengupload file yang berisi Server Key ke repo publik.
