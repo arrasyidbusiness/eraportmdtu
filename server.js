@@ -10,16 +10,17 @@ app.use(express.static(path.join(__dirname, 'public')));
 const PORT = process.env.PORT || 3000;
 const SERVER_KEY = process.env.MIDTRANS_SERVER_KEY || '';
 const CLIENT_KEY = process.env.MIDTRANS_CLIENT_KEY || '';
-const IS_PROD =
-  String(process.env.MIDTRANS_IS_PRODUCTION || 'false').toLowerCase() === 'true';
-
+const IS_PROD = String(process.env.MIDTRANS_IS_PRODUCTION || 'false').toLowerCase() === 'true';
 const DRIVE_URL = process.env.DRIVE_DOWNLOAD_URL || '';
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 const PRICE = 75000;
 
-// ======================================================
-// MIDTRANS URL
-// ======================================================
+// V15.6 Secure Download defaults.
+// Optional Railway variables:
+// DOWNLOAD_MAX=3
+// DOWNLOAD_TTL_HOURS=48
+const DOWNLOAD_MAX = Math.max(1, Number(process.env.DOWNLOAD_MAX || 3));
+const DOWNLOAD_TTL_HOURS = Math.max(1, Number(process.env.DOWNLOAD_TTL_HOURS || 48));
 
 const SNAP_API = IS_PROD
   ? 'https://app.midtrans.com/snap/v1/transactions'
@@ -33,48 +34,28 @@ const STATUS_API_BASE = IS_PROD
   ? 'https://api.midtrans.com/v2'
   : 'https://api.sandbox.midtrans.com/v2';
 
-// ======================================================
-// MIDTRANS STATUS
-// ======================================================
-
-function mapMidtransStatus(n) {
+function mapMidtransStatus(n){
   const tx = String(n?.transaction_status || '').toLowerCase();
   const fraud = String(n?.fraud_status || '').toLowerCase();
 
-  if (tx === 'settlement') return 'settlement';
-
-  if (
-    tx === 'capture' &&
-    (!fraud || fraud === 'accept')
-  ) {
-    return 'capture';
-  }
-
-  if (
-    tx === 'capture' &&
-    fraud &&
-    fraud !== 'accept'
-  ) {
-    return 'challenge';
-  }
-
+  if(tx === 'settlement') return 'settlement';
+  if(tx === 'capture' && (!fraud || fraud === 'accept')) return 'capture';
+  if(tx === 'capture' && fraud && fraud !== 'accept') return 'challenge';
   return tx || 'pending';
 }
 
-async function fetchMidtransStatus(orderId) {
-  if (!SERVER_KEY) {
-    throw new Error('MIDTRANS_SERVER_KEY belum dikonfigurasi.');
-  }
+async function fetchMidtransStatus(orderId){
+  if(!SERVER_KEY) throw new Error('MIDTRANS_SERVER_KEY belum dikonfigurasi.');
 
   const auth = Buffer.from(SERVER_KEY + ':').toString('base64');
 
   const r = await fetch(
     `${STATUS_API_BASE}/${encodeURIComponent(orderId)}/status`,
     {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        Authorization: 'Basic ' + auth
+      method:'GET',
+      headers:{
+        'Accept':'application/json',
+        'Authorization':'Basic ' + auth
       }
     }
   );
@@ -85,7 +66,7 @@ async function fetchMidtransStatus(orderId) {
     d = await r.json();
   } catch {}
 
-  if (!r.ok) {
+  if(!r.ok){
     const err = new Error(
       d.status_message ||
       (Array.isArray(d.error_messages)
@@ -95,28 +76,42 @@ async function fetchMidtransStatus(orderId) {
     );
 
     err.httpStatus = r.status;
-
     throw err;
   }
 
   return d;
 }
 
-// ======================================================
-// ORDER STORAGE
-// ======================================================
+function persistMidtransStatus(orderId, d){
+  const existing = getOrder(orderId);
+
+  if(!existing) return null;
+
+  saveOrder({
+    orderId,
+    status: mapMidtransStatus(d),
+    paymentType: d.payment_type || existing.paymentType || '',
+    transactionId: d.transaction_id || existing.transactionId || '',
+    settlementTime: d.settlement_time || existing.settlementTime || '',
+    transactionTime: d.transaction_time || existing.transactionTime || '',
+    statusMessage: d.status_message || existing.statusMessage || '',
+    rawLastStatus: d
+  });
+
+  return getOrder(orderId);
+}
 
 const DATA_FILE = path.join(__dirname, 'data', 'orders.json');
 
-function ensureDataFile() {
+function ensureDataFile(){
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
 
-  if (!fs.existsSync(DATA_FILE)) {
+  if(!fs.existsSync(DATA_FILE)){
     fs.writeFileSync(DATA_FILE, '{}');
   }
 }
 
-function readOrders() {
+function readOrders(){
   ensureDataFile();
 
   try {
@@ -128,7 +123,7 @@ function readOrders() {
   }
 }
 
-function writeOrders(orders) {
+function writeOrders(orders){
   ensureDataFile();
 
   fs.writeFileSync(
@@ -137,7 +132,7 @@ function writeOrders(orders) {
   );
 }
 
-function saveOrder(order) {
+function saveOrder(order){
   const orders = readOrders();
 
   orders[order.orderId] = {
@@ -149,58 +144,71 @@ function saveOrder(order) {
   writeOrders(orders);
 }
 
-function getOrder(orderId) {
+function getOrder(orderId){
   return readOrders()[orderId] || null;
 }
 
-function persistMidtransStatus(orderId, d) {
-  const existing = getOrder(orderId);
+// ======================================================
+// SECURE DOWNLOAD HELPERS
+// ======================================================
 
-  if (!existing) return null;
+function ensureDownloadWindow(order){
+  const now = Date.now();
+
+  let expiresAt = order.downloadExpiresAt
+    ? new Date(order.downloadExpiresAt).getTime()
+    : 0;
+
+  if(!expiresAt || Number.isNaN(expiresAt)){
+    expiresAt =
+      now +
+      (DOWNLOAD_TTL_HOURS * 60 * 60 * 1000);
+  }
 
   saveOrder({
-    orderId,
-
-    status:
-      mapMidtransStatus(d),
-
-    paymentType:
-      d.payment_type ||
-      existing.paymentType ||
-      '',
-
-    transactionId:
-      d.transaction_id ||
-      existing.transactionId ||
-      '',
-
-    settlementTime:
-      d.settlement_time ||
-      existing.settlementTime ||
-      '',
-
-    transactionTime:
-      d.transaction_time ||
-      existing.transactionTime ||
-      '',
-
-    statusMessage:
-      d.status_message ||
-      existing.statusMessage ||
-      '',
-
-    rawLastStatus: d
+    orderId: order.orderId,
+    downloadMax:
+      Number(order.downloadMax || DOWNLOAD_MAX),
+    downloadCount:
+      Number(order.downloadCount || 0),
+    downloadExpiresAt:
+      new Date(expiresAt).toISOString()
   });
 
-  return getOrder(orderId);
+  return getOrder(order.orderId);
+}
+
+function getDownloadState(order){
+  const max =
+    Number(order.downloadMax || DOWNLOAD_MAX);
+
+  const count =
+    Number(order.downloadCount || 0);
+
+  const expiresMs =
+    order.downloadExpiresAt
+      ? new Date(order.downloadExpiresAt).getTime()
+      : 0;
+
+  return {
+    max,
+    count,
+    remaining:
+      Math.max(0, max - count),
+    expiresAt:
+      order.downloadExpiresAt || '',
+    expired:
+      !expiresMs || Date.now() > expiresMs,
+    exhausted:
+      count >= max
+  };
 }
 
 // ======================================================
 // CONFIG
-// checkout.html membutuhkan snapJsUrl
 // ======================================================
 
-app.get('/api/config', (req, res) => {
+app.get('/api/config', (req,res)=>{
   res.json({
     clientKey: CLIENT_KEY,
     snapJsUrl: SNAP_JS,
@@ -212,9 +220,9 @@ app.get('/api/config', (req, res) => {
 // CREATE TRANSACTION
 // ======================================================
 
-app.post('/api/create-transaction', async (req, res) => {
-  try {
-    if (!SERVER_KEY || !CLIENT_KEY) {
+app.post('/api/create-transaction', async (req,res)=>{
+  try{
+    if(!SERVER_KEY || !CLIENT_KEY){
       return res.status(500).json({
         error:
           'Midtrans key belum dikonfigurasi pada server.'
@@ -230,7 +238,7 @@ app.post('/api/create-transaction', async (req, res) => {
       paymentMode = 'all'
     } = req.body || {};
 
-    if (!nama || !wa || !email) {
+    if(!nama || !wa || !email){
       return res.status(400).json({
         error:
           'Nama, WhatsApp, dan email wajib diisi.'
@@ -249,82 +257,84 @@ app.post('/api/create-transaction', async (req, res) => {
         gross_amount: PRICE
       },
 
-      item_details: [
-        {
-          id: 'ERAPORT-MDTA-MDTU',
-          price: PRICE,
-          quantity: 1,
-          name: 'E-Raport Digital MDTA/MDTU'
-        }
-      ],
+      item_details: [{
+        id:'ERAPORT-MDTA-MDTU',
+        price: PRICE,
+        quantity: 1,
+        name:'E-Raport Digital MDTA/MDTU'
+      }],
 
       customer_details: {
         first_name:
-          String(nama).slice(0, 50),
+          String(nama).slice(0,50),
 
         email:
-          String(email).slice(0, 100),
+          String(email).slice(0,100),
 
         phone:
-          String(wa).slice(0, 30)
+          String(wa).slice(0,30)
       },
 
       custom_field1:
-        String(madrasah).slice(0, 255),
+        String(madrasah).slice(0,255),
 
       custom_field2:
-        String(catatan).slice(0, 255)
+        String(catatan).slice(0,255)
     };
 
-    // ==================================================
-    // MODE QRIS / GOPAY
-    // ==================================================
-
-    if (
-      String(paymentMode).toLowerCase() === 'qris'
-    ) {
+    if(
+      String(paymentMode).toLowerCase()
+      === 'qris'
+    ){
       payload.enabled_payments = ['gopay'];
     }
 
     const auth =
-      Buffer.from(SERVER_KEY + ':').toString('base64');
+      Buffer
+        .from(SERVER_KEY + ':')
+        .toString('base64');
 
     const r =
-      await fetch(SNAP_API, {
-        method: 'POST',
+      await fetch(
+        SNAP_API,
+        {
+          method:'POST',
 
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          Authorization: 'Basic ' + auth
-        },
+          headers:{
+            'Accept':'application/json',
+            'Content-Type':'application/json',
+            'Authorization':'Basic ' + auth
+          },
 
-        body:
-          JSON.stringify(payload)
-      });
+          body:
+            JSON.stringify(payload)
+        }
+      );
 
     const d =
       await r.json();
 
-    if (!r.ok) {
+    if(!r.ok){
       console.error(
         'Midtrans create error',
         d
       );
 
-      return res.status(r.status).json({
-        error:
-          d.error_messages?.join(', ') ||
-          d.status_message ||
-          'Gagal membuat transaksi Midtrans.'
-      });
+      return res
+        .status(r.status)
+        .json({
+          error:
+            d.error_messages?.join(', ') ||
+            d.status_message ||
+            'Gagal membuat transaksi Midtrans.'
+        });
     }
 
     saveOrder({
       orderId,
       accessToken,
 
-      status: 'pending',
+      status:'pending',
 
       nama,
       wa,
@@ -347,10 +357,11 @@ app.post('/api/create-transaction', async (req, res) => {
     res.json({
       orderId,
       accessToken,
-      snapToken: d.token
+      snapToken:
+        d.token
     });
 
-  } catch (err) {
+  }catch(err){
     console.error(err);
 
     res.status(500).json({
@@ -366,9 +377,9 @@ app.post('/api/create-transaction', async (req, res) => {
 
 app.post(
   '/api/midtrans-notification',
-  async (req, res) => {
+  async (req,res)=>{
 
-    try {
+    try{
       const n =
         req.body || {};
 
@@ -390,10 +401,10 @@ app.post(
           )
           .digest('hex');
 
-      if (
+      if(
         !signature_key ||
         signature_key !== expected
-      ) {
+      ){
         return res.status(403).json({
           error:
             'Signature notification tidak valid.'
@@ -403,7 +414,7 @@ app.post(
       const existing =
         getOrder(order_id);
 
-      if (!existing) {
+      if(!existing){
         return res.status(404).json({
           error:
             'Order tidak ditemukan.'
@@ -439,10 +450,10 @@ app.post(
       });
 
       res.json({
-        received: true
+        received:true
       });
 
-    } catch (err) {
+    }catch(err){
       console.error(err);
 
       res.status(500).json({
@@ -454,12 +465,12 @@ app.post(
 );
 
 // ======================================================
-// GET ORDER + AUTO SYNC MIDTRANS
+// GET ORDER + AUTO SYNC
 // ======================================================
 
 app.get(
   '/api/order/:orderId',
-  async (req, res) => {
+  async (req,res)=>{
 
     const orderId =
       req.params.orderId;
@@ -467,7 +478,7 @@ app.get(
     let o =
       getOrder(orderId);
 
-    if (!o) {
+    if(!o){
       return res.status(404).json({
         error:
           'Order tidak ditemukan.'
@@ -491,13 +502,13 @@ app.get(
         o.status || ''
       ).toLowerCase();
 
-    if (
+    if(
       String(req.query.sync || '1') !== '0' &&
       !terminalStatuses.includes(
         currentStatus
       )
-    ) {
-      try {
+    ){
+      try{
         const d =
           await fetchMidtransStatus(
             orderId
@@ -509,7 +520,7 @@ app.get(
             d
           ) || o;
 
-      } catch (err) {
+      }catch(err){
         console.warn(
           'Midtrans status sync warning:',
           orderId,
@@ -550,24 +561,24 @@ app.get(
 );
 
 // ======================================================
-// MANUAL / FORCE SYNC
+// FORCE SYNC
 // ======================================================
 
 app.post(
   '/api/order/:orderId/sync',
-  async (req, res) => {
+  async (req,res)=>{
 
     const orderId =
       req.params.orderId;
 
-    if (!getOrder(orderId)) {
+    if(!getOrder(orderId)){
       return res.status(404).json({
         error:
           'Order tidak ditemukan.'
       });
     }
 
-    try {
+    try{
       const d =
         await fetchMidtransStatus(
           orderId
@@ -608,7 +619,7 @@ app.post(
           o.updatedAt || ''
       });
 
-    } catch (err) {
+    }catch(err){
       console.error(
         'Midtrans manual sync error:',
         orderId,
@@ -631,37 +642,36 @@ app.post(
 );
 
 // ======================================================
-// ACCESS / DOWNLOAD
-// Auto sync lagi sebelum memberi akses
+// SECURE ACCESS CHECK
 // ======================================================
 
 app.get(
   '/api/access/:orderId/:accessToken',
-  async (req, res) => {
+  async (req,res)=>{
 
     let o =
       getOrder(
         req.params.orderId
       );
 
-    if (!o) {
+    if(!o){
       return res.status(404).json({
         error:
           'Order tidak ditemukan.'
       });
     }
 
-    if (
+    if(
       req.params.accessToken !==
       o.accessToken
-    ) {
+    ){
       return res.status(403).json({
         error:
           'Token akses tidak valid.'
       });
     }
 
-    if (
+    if(
       ![
         'settlement',
         'capture',
@@ -671,8 +681,8 @@ app.get(
           o.status || ''
         ).toLowerCase()
       )
-    ) {
-      try {
+    ){
+      try{
         const d =
           await fetchMidtransStatus(
             req.params.orderId
@@ -684,7 +694,7 @@ app.get(
             d
           ) || o;
 
-      } catch (err) {
+      }catch(err){
         console.warn(
           'Access status sync warning:',
           req.params.orderId,
@@ -693,7 +703,7 @@ app.get(
       }
     }
 
-    if (
+    if(
       ![
         'settlement',
         'capture',
@@ -703,7 +713,7 @@ app.get(
           o.status || ''
         ).toLowerCase()
       )
-    ) {
+    ){
       return res.status(402).json({
         error:
           'Pembayaran belum terverifikasi.',
@@ -713,20 +723,176 @@ app.get(
       });
     }
 
-    if (!DRIVE_URL) {
+    if(!DRIVE_URL){
       return res.status(503).json({
         error:
-          'Link akses belum dikonfigurasi.'
+          'Link produk belum dikonfigurasi.'
+      });
+    }
+
+    o =
+      ensureDownloadWindow(o);
+
+    const state =
+      getDownloadState(o);
+
+    if(state.expired){
+      return res.status(410).json({
+        error:
+          'Masa akses download telah berakhir.',
+
+        ...state
+      });
+    }
+
+    if(state.exhausted){
+      return res.status(429).json({
+        error:
+          'Batas download telah tercapai.',
+
+        ...state
       });
     }
 
     res.json({
-      url:
-        DRIVE_URL,
-
       status:
-        o.status
+        o.status,
+
+      downloadUrl:
+        `/api/download/${encodeURIComponent(o.orderId)}/${encodeURIComponent(o.accessToken)}`,
+
+      ...state
     });
+  }
+);
+
+// ======================================================
+// SECURE DOWNLOAD
+// ======================================================
+
+app.get(
+  '/api/download/:orderId/:accessToken',
+  async (req,res)=>{
+
+    let o =
+      getOrder(
+        req.params.orderId
+      );
+
+    if(!o){
+      return res
+        .status(404)
+        .send(
+          'Order tidak ditemukan.'
+        );
+    }
+
+    if(
+      req.params.accessToken !==
+      o.accessToken
+    ){
+      return res
+        .status(403)
+        .send(
+          'Token akses tidak valid.'
+        );
+    }
+
+    if(
+      ![
+        'settlement',
+        'capture',
+        'paid'
+      ].includes(
+        String(
+          o.status || ''
+        ).toLowerCase()
+      )
+    ){
+      try{
+        const d =
+          await fetchMidtransStatus(
+            req.params.orderId
+          );
+
+        o =
+          persistMidtransStatus(
+            req.params.orderId,
+            d
+          ) || o;
+
+      }catch(err){
+        console.warn(
+          'Download status sync warning:',
+          req.params.orderId,
+          err.message
+        );
+      }
+    }
+
+    if(
+      ![
+        'settlement',
+        'capture',
+        'paid'
+      ].includes(
+        String(
+          o.status || ''
+        ).toLowerCase()
+      )
+    ){
+      return res
+        .status(402)
+        .send(
+          'Pembayaran belum terverifikasi.'
+        );
+    }
+
+    if(!DRIVE_URL){
+      return res
+        .status(503)
+        .send(
+          'Link produk belum dikonfigurasi.'
+        );
+    }
+
+    o =
+      ensureDownloadWindow(o);
+
+    const state =
+      getDownloadState(o);
+
+    if(state.expired){
+      return res
+        .status(410)
+        .send(
+          'Masa akses download telah berakhir.'
+        );
+    }
+
+    if(state.exhausted){
+      return res
+        .status(429)
+        .send(
+          'Batas download telah tercapai.'
+        );
+    }
+
+    saveOrder({
+      orderId:
+        o.orderId,
+
+      downloadCount:
+        state.count + 1,
+
+      lastDownloadAt:
+        new Date().toISOString()
+    });
+
+    return res.redirect(
+      302,
+      DRIVE_URL
+    );
   }
 );
 
@@ -734,7 +900,7 @@ app.get(
 // START
 // ======================================================
 
-app.listen(PORT, () => {
+app.listen(PORT, ()=>{
   console.log(
     `E-Raport Payment Gateway berjalan di ${BASE_URL}`
   );
