@@ -1,65 +1,59 @@
 <!doctype html>
-<html lang="id">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Status Pembayaran — E-Raport Digital MDTA/MDTU</title>
+<html lang="id"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#075a31"><title>Status Pembayaran — E-Raport</title>
 <style>
-:root{--green:#075a31;--green2:#0a7a42;--bg:#f4f8f5;--ink:#153126;--muted:#68786f;--line:#e2eae5}
-*{box-sizing:border-box}body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--ink)}
-.wrap{width:min(620px,calc(100% - 22px));margin:30px auto}.card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:24px;box-shadow:0 10px 28px rgba(18,65,39,.06);text-align:center}
-.icon{font-size:3rem}.title{font-size:1.4rem;font-weight:1000;margin:10px 0}.sub{font-size:.8rem;line-height:1.55;color:var(--muted)}
-.status{margin:15px 0;padding:12px;border-radius:12px;background:#f7fbf8;border:1px solid #e2ece6;font-weight:900;color:var(--green)}
-.btn{display:block;margin-top:12px;padding:12px;border-radius:12px;background:linear-gradient(135deg,var(--green2),var(--green));color:#fff;text-decoration:none;font-weight:1000}
-.btn.secondary{background:#fff;color:var(--green);border:1px solid #dfe8e2}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f8f5;color:#153126}.wrap{max-width:620px;margin:35px auto;padding:14px}.card{background:#fff;border:1px solid #e2eae5;border-radius:20px;padding:26px;text-align:center}.icon{font-size:2.2rem;margin-bottom:10px}h1{margin:0 0 8px;font-size:1.45rem}.lead{color:#68786f;line-height:1.5}.box{margin-top:18px;padding:14px;border-radius:12px;font-weight:700;background:#fff8dd;border:1px solid #eddc9c;color:#6b5700}.box.success{background:#eef8f2;border-color:#cfe6d8;color:#075a31}.box.fail{background:#fff1f0;border-color:#f0cac6;color:#a12622}.meta{margin-top:12px;font-size:.76rem;color:#68786f;line-height:1.5;word-break:break-word}.actions{display:grid;gap:9px;margin-top:18px}.btn{display:flex;justify-content:center;align-items:center;min-height:48px;border-radius:12px;text-decoration:none;font-weight:800;border:1px solid #dce7e0;background:#fff;color:#075a31}.primary{background:#075a31;color:#fff;border-color:#075a31}.progress{height:6px;background:#edf2ef;border-radius:999px;overflow:hidden;margin:14px 0}.progress span{display:block;height:100%;width:30%;background:#0a7a42;animation:m 1.2s linear infinite}@keyframes m{from{transform:translateX(-120%)}to{transform:translateX(420%)}}@media(max-width:520px){.wrap{margin:10px auto;padding:7px}.card{padding:18px 14px}}
 </style></head>
-<body>
-<div class="wrap"><div class="card">
-  <div class="icon">💳</div>
-  <div class="title">Status Pembayaran</div>
-  <p class="sub">Sistem sedang memeriksa status transaksi Anda.</p>
-  <div id="status" class="status">Memeriksa...</div>
-  <div id="actions"></div>
-  <a class="btn secondary" href="index.html">Kembali ke Landing Page</a>
-</div></div>
+<body><div class="wrap"><div class="card">
+<div id="icon" class="icon">⏳</div><h1 id="title">Memeriksa Pembayaran</h1>
+<p id="lead" class="lead">Sistem sedang menyinkronkan status transaksi dengan Midtrans.</p>
+<div id="box" class="box">Status sedang diperiksa…</div><div id="progress" class="progress"><span></span></div>
+<div id="meta" class="meta"></div>
+<div class="actions">
+<a id="download" class="btn primary" href="#" target="_blank" hidden>⬇ Unduh / Akses E-Raport</a>
+<button id="retry" class="btn" type="button">↻ Cek Status Sekarang</button>
+<a class="btn" href="index.html">Kembali ke Landing Page</a>
+</div></div></div>
 <script>
-const q=new URLSearchParams(location.search);
-const orderId=q.get('order_id');
-const access=q.get('access');
-const statusEl=document.getElementById('status');
-const actions=document.getElementById('actions');
-let tries=0;
+const p=new URLSearchParams(location.search),orderId=p.get('order_id')||'',access=p.get('access')||'';
+const ok=new Set(['settlement','capture','paid']),bad=new Set(['deny','cancel','expire','failure']);
+let timer=null,busy=false,tries=0;
+const $=id=>document.getElementById(id);
 
-async function check(){
-  if(!orderId){ statusEl.textContent='Order ID tidak ditemukan.'; return; }
-  try{
-    const r=await fetch('/api/order/'+encodeURIComponent(orderId));
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error||'Gagal mengecek status');
-    const s=(d.status||'pending').toLowerCase();
-    if(['settlement','capture','paid'].includes(s)){
-      statusEl.textContent='Pembayaran berhasil dan sudah terverifikasi.';
-      const ar=await fetch('/api/access/'+encodeURIComponent(orderId)+'/'+encodeURIComponent(access||''));
-      const ad=await ar.json();
-      if(ar.ok && ad.url){
-        actions.innerHTML='<a class="btn" href="'+ad.url+'" target="_blank" rel="noopener">⬇️ Buka Akses Aplikasi</a>';
-      }else{
-        actions.innerHTML='<p class="sub">Pembayaran sudah berhasil. Akses sedang disiapkan.</p>';
-      }
-      return;
-    }
-    if(['deny','cancel','expire','failure'].includes(s)){
-      statusEl.textContent='Pembayaran tidak berhasil / dibatalkan / kedaluwarsa.';
-      actions.innerHTML='<a class="btn" href="checkout.html">Coba Pembayaran Lagi</a>';
-      return;
-    }
-    statusEl.textContent='Pembayaran belum selesai. Status: '+s;
-    if(++tries < 30) setTimeout(check, 3000);
-  }catch(e){
-    statusEl.textContent=e.message;
-    if(++tries < 20) setTimeout(check, 3000);
-  }
+function render(kind,msg,d={}){
+  $('box').className='box'+(kind==='success'?' success':kind==='fail'?' fail':'');
+  $('box').textContent=msg;
+  $('progress').style.display=kind==='pending'?'block':'none';
+  $('meta').textContent=[d.orderId&&'Order ID: '+d.orderId,d.paymentType&&'Metode: '+d.paymentType,d.settlementTime&&'Settlement: '+d.settlementTime].filter(Boolean).join(' • ');
 }
-check();
-</script>
-</body></html>
+async function unlock(){
+  const r=await fetch(`/api/access/${encodeURIComponent(orderId)}/${encodeURIComponent(access)}`,{cache:'no-store'});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok&&d.url){$('download').href=d.url;$('download').hidden=false;}
+}
+async function check(manual=false){
+  if(busy||!orderId)return; busy=true;
+  try{
+    if(manual) await fetch(`/api/order/${encodeURIComponent(orderId)}/sync`,{method:'POST',cache:'no-store'}).catch(()=>null);
+    const r=await fetch(`/api/order/${encodeURIComponent(orderId)}?sync=1&_=${Date.now()}`,{cache:'no-store'});
+    const d=await r.json(); if(!r.ok) throw new Error(d.error||'Gagal membaca status.');
+    const s=String(d.status||'pending').toLowerCase();
+    if(ok.has(s)){
+      clearTimeout(timer);$('icon').textContent='✅';$('title').textContent='Pembayaran Berhasil';
+      $('lead').textContent='Pembayaran telah terverifikasi.';render('success','Status: '+s,d);await unlock();return;
+    }
+    if(bad.has(s)){
+      clearTimeout(timer);$('icon').textContent='✕';$('title').textContent='Pembayaran Belum Berhasil';
+      $('lead').textContent='Transaksi belum dapat membuka akses.';render('fail','Status: '+s,d);return;
+    }
+    tries++;$('icon').textContent='⏳';$('title').textContent='Menunggu Verifikasi';
+    render('pending','Status saat ini: '+s+'. Sistem akan cek ulang otomatis…',d);
+    timer=setTimeout(()=>check(false),tries<6?3000:5000);
+  }catch(e){
+    render('pending','Sinkronisasi belum berhasil: '+e.message);
+    timer=setTimeout(()=>check(false),5000);
+  }finally{busy=false}
+}
+$('retry').onclick=()=>check(true);check(true);
+</script></body></html>
